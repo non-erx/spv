@@ -63,8 +63,8 @@ All keybindings are conveniently displayed in the footer of the application:
 
 ### 🌠 Screenshots
 <div style="display: flex; gap: 10px;">
-  <img src="https://github.com/non-erx/spv/blob/main/pics/tui_slate.png?raw=true" alt="spv slate" width="300">
-  <img src="https://github.com/non-erx/spv/blob/main/pics/tui_pink.png?raw=true" alt="spv pink" width="300">
+  <img src="https://github.com/non-erx/spv/blob/main/pics/tui_slate.png?raw=true" alt="spv slate" width="400">
+  <img src="https://github.com/non-erx/spv/blob/main/pics/tui_pink.png?raw=true" alt="spv pink" width="400">
 </div>
 
 ### ✨ Features

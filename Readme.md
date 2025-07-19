@@ -62,9 +62,11 @@ All keybindings are conveniently displayed in the footer of the application:
 **Available Themes:** `slate` (default), `pink`, `forest`.
 
 ### 🌠 Screenshots
-<div align="center"><img src="https://github.com/non-erx/spv/blob/main/pics/tui_slate.png?raw=true" alt="spv slate" width="2500"></div>
-<div align="center"><img src="https://github.com/non-erx/spv/blob/main/pics/tui_pink.png?raw=true" alt="spv pink" width="2500"></div>
-<div align="center"><img src="https://github.com/non-erx/spv/blob/main/pics/tui_forest.png?raw=true" alt="spv forest" width="2500"></div>
+<div style="display: flex; gap: 10px;">
+  <img src="https://github.com/non-erx/spv/blob/main/pics/tui_slate.png?raw=true" alt="spv slate" width="500">
+  <img src="https://github.com/non-erx/spv/blob/main/pics/tui_pink.png?raw=true" alt="spv pink" width="500">
+</div>
+
 ### ✨ Features
 
 -   `🖥️` **Elegant TUI:** A beautiful and responsive two-pane interface for at-a-glance information, built with Bubble Tea.

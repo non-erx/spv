@@ -20,7 +20,7 @@ You can install `spv` in one of three ways:
 
 If you have Go installed, this is the easiest method:
 ```bash
-go install github.com/non-erx/spv@latest
+go install github.com/non-erx/spv@v0.0.1
 ```
 
 **2. From Source**
@@ -76,7 +76,7 @@ All keybindings are conveniently displayed in the footer of the application:
 -   `📜` **Detailed View:** See a session's ID, status (Attached/Detached), autostart configuration, the command it's running, and a custom description.
 -   `⌨️` **Intuitive Workflow:** A multi-step wizard guides you through creating new sessions (Name → Command → Description → Autostart).
 <div  align="center">
--
+
 <div  align="center">
 <sub >Check out my silly web-page -> <a href="https://non-erx.dev">non-erx.dev </a></sub>
 </div>

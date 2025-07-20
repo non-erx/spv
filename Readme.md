@@ -1,5 +1,3 @@
-
-
 # <div align="center">💻</div>
 <div align="center"><img src="https://github.com/non-erx/spv/blob/main/pics/spvlogo.png?raw=true" alt="spv logo" width="7800"></div>
 <div  align="center"><sup>Screen Process Viewer (spv)</sup></div>
@@ -20,7 +18,7 @@ You can install `spv` in one of three ways:
 
 If you have Go installed, this is the easiest method:
 ```bash
-go install github.com/non-erx/spv@v0.0.1
+go install github.com/non-erx/spv@latest
 ```
 
 **2. From Source**
@@ -50,6 +48,7 @@ All keybindings are conveniently displayed in the footer of the application:
 | **a** | Add a new session |
 | **k** | Kill the selected session |
 | **r** | Refresh the session list and stats |
+| **t** | Toggle autostart for the selected session |
 | **?** | Show the about screen |
 | **q** | Quit the application |
 
@@ -59,7 +58,7 @@ All keybindings are conveniently displayed in the footer of the application:
 ```bash
 ./spv theme <theme_name>
 ```
-**Available Themes:** `slate` (default), `pink`, `forest`.
+**Available Themes:** `slate` (default), `pink`, `forest`, `mellow`, `arctic`, `solarized`, `dracula`, `gruvbox`, `nord`.
 
 ### 🌠 Screenshots
 <div style="display: flex; gap: 10px;">
@@ -72,11 +71,11 @@ All keybindings are conveniently displayed in the footer of the application:
 -   `🖥️` **Elegant TUI:** A beautiful and responsive two-pane interface for at-a-glance information, built with Bubble Tea.
 -   `🔄` **Live Data:** Auto-refreshes every second with real-time CPU, RAM, and session status updates.
 -   `🚀` **Dynamic Header:** Displays the latest commit message from this GitHub repository, keeping you in the loop.
--   `🎨` **Customizable Themes:** Choose from multiple built-in themes (`slate`, `pink`, `forest`) and save your preference.
+-   `🎨` **Customizable Themes:** Choose from multiple built-in themes and save your preference.
 -   `💾` **Persistent Sessions:** Remembers session commands and descriptions across restarts via a simple JSON configuration file.
--   `⚡` **Autostart Configuration:** Easily flag sessions to be started on system reboot (requires a user-side script to read `~/.config/spv/autostart.json`).
+-   `⚡` **Autostart Configuration:** Easily flag sessions to be started on system reboot. For Linux systems, `spv` manages the necessary service files. Autostart is not supported on macOS or Windows.
 -   `📜` **Detailed View:** See a session's ID, status (Attached/Detached), autostart configuration, the command it's running, and a custom description.
--   `⌨️` **Intuitive Workflow:** A multi-step wizard guides you through creating new sessions (Name → Command → Description → Autostart).
+-   `⌨️` **Intuitive Workflow:** A multi-step wizard guides you through creating new sessions (Name → Command → Description). Autostart status is now toggled directly on existing sessions with the 't' key.
 <div  align="center">
 
 <div  align="center">

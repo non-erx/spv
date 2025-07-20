@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,7 +30,6 @@ const (
 	addingName
 	addingCommand
 	addingDescription
-	addingAutostart
 	showingAbout
 )
 
@@ -58,6 +58,7 @@ type model struct {
 	cpuUsage        float64
 	memUsage        float64
 	commitMsg       string
+	errorMsg        string
 }
 
 type Theme struct {
@@ -110,13 +111,85 @@ var themes = map[string]Theme{
 		StatusAttached: lipgloss.Color("#00FFAA"),
 		StatusDetached: lipgloss.Color("#FFAA00"),
 	},
+	"mellow": {
+		HeaderBg:       lipgloss.Color("#F0F8FF"),
+		PanelBg:        lipgloss.Color("#F8F8FF"),
+		Border:         lipgloss.Color("#ADD8E6"),
+		Text:           lipgloss.Color("#4682B4"),
+		MutedText:      lipgloss.Color("#87CEEB"),
+		Accent:         lipgloss.Color("#6A5ACD"),
+		SelectedBg:     lipgloss.Color("#B0C4DE"),
+		SelectedFg:     lipgloss.Color("#191970"),
+		StatusAttached: lipgloss.Color("#32CD32"),
+		StatusDetached: lipgloss.Color("#FFD700"),
+	},
+	"arctic": {
+		HeaderBg:       lipgloss.Color("#E0FFFF"),
+		PanelBg:        lipgloss.Color("#F0FFFF"),
+		Border:         lipgloss.Color("#B0E0E6"),
+		Text:           lipgloss.Color("#2F4F4F"),
+		MutedText:      lipgloss.Color("#696969"),
+		Accent:         lipgloss.Color("#4682B4"),
+		SelectedBg:     lipgloss.Color("#87CEFA"),
+		SelectedFg:     lipgloss.Color("#1C1C1C"),
+		StatusAttached: lipgloss.Color("#5F9EA0"),
+		StatusDetached: lipgloss.Color("#FFA07A"),
+	},
+	"solarized": {
+		HeaderBg:       lipgloss.Color("#002b36"),
+		PanelBg:        lipgloss.Color("#073642"),
+		Border:         lipgloss.Color("#586e75"),
+		Text:           lipgloss.Color("#839496"),
+		MutedText:      lipgloss.Color("#657b83"),
+		Accent:         lipgloss.Color("#268bd2"),
+		SelectedBg:     lipgloss.Color("#2aa198"),
+		SelectedFg:     lipgloss.Color("#002b36"),
+		StatusAttached: lipgloss.Color("#859900"),
+		StatusDetached: lipgloss.Color("#b58900"),
+	},
+	"dracula": {
+		HeaderBg:       lipgloss.Color("#282a36"),
+		PanelBg:        lipgloss.Color("#282a36"),
+		Border:         lipgloss.Color("#44475a"),
+		Text:           lipgloss.Color("#f8f8f2"),
+		MutedText:      lipgloss.Color("#6272a4"),
+		Accent:         lipgloss.Color("#bd93f9"),
+		SelectedBg:     lipgloss.Color("#ff79c6"),
+		SelectedFg:     lipgloss.Color("#282a36"),
+		StatusAttached: lipgloss.Color("#50fa7b"),
+		StatusDetached: lipgloss.Color("#f1fa8c"),
+	},
+	"gruvbox": {
+		HeaderBg:       lipgloss.Color("#282828"),
+		PanelBg:        lipgloss.Color("#3c3836"),
+		Border:         lipgloss.Color("#504945"),
+		Text:           lipgloss.Color("#ebdbb2"),
+		MutedText:      lipgloss.Color("#928374"),
+		Accent:         lipgloss.Color("#fabd2f"),
+		SelectedBg:     lipgloss.Color("#fe8019"),
+		SelectedFg:     lipgloss.Color("#282828"),
+		StatusAttached: lipgloss.Color("#b8bb26"),
+		StatusDetached: lipgloss.Color("#d65d0e"),
+	},
+	"nord": {
+		HeaderBg:       lipgloss.Color("#2E3440"),
+		PanelBg:        lipgloss.Color("#3B4252"),
+		Border:         lipgloss.Color("#4C566A"),
+		Text:           lipgloss.Color("#D8DEE9"),
+		MutedText:      lipgloss.Color("#4C566A"),
+		Accent:         lipgloss.Color("#88C0D0"),
+		SelectedBg:     lipgloss.Color("#81A1C1"),
+		SelectedFg:     lipgloss.Color("#2E3440"),
+		StatusAttached: lipgloss.Color("#A3BE8C"),
+		StatusDetached: lipgloss.Color("#EBCB8B"),
+	},
 }
 
 var (
 	headerStyle, sidebarStyle, contentStyle, selectedStyle,
 	statusAttachedStyle, statusDetachedStyle, accentStyle,
 	footerStyle, inputStyle, aboutStyle, overflowStyle,
-	mutedTextStyle, normalTextStyle lipgloss.Style
+	mutedTextStyle, normalTextStyle, errorTextStyle lipgloss.Style
 )
 
 func applyTheme(name string) {
@@ -176,6 +249,12 @@ func applyTheme(name string) {
 
 	normalTextStyle = lipgloss.NewStyle().
 		Foreground(theme.Text)
+
+	errorTextStyle = lipgloss.NewStyle().
+		Background(lipgloss.Color("#FF0000")).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Padding(0, 1).
+		Bold(true)
 }
 
 type Config struct {
@@ -186,6 +265,12 @@ type SessionEntry struct {
 	Name        string `json:"name"`
 	Command     string `json:"command"`
 	Description string `json:"description"`
+}
+
+type SystemInfo struct {
+	OS           string
+	Distribution string
+	InitSystem   string
 }
 
 var configDir, configFile, sessionFile, autostartFile string
@@ -283,9 +368,346 @@ func removeEntry(file, name string) error {
 	return writeConfig(file, updatedEntries)
 }
 
+func detectSystem() SystemInfo {
+	info := SystemInfo{OS: runtime.GOOS}
+	switch runtime.GOOS {
+	case "linux":
+		info.Distribution = detectLinuxDistribution()
+		info.InitSystem = detectInitSystem()
+	case "darwin":
+		info.Distribution = "macOS"
+		info.InitSystem = "launchd"
+	default:
+		info.Distribution = "unknown"
+		info.InitSystem = "unknown"
+	}
+	return info
+}
+
+func detectLinuxDistribution() string {
+	if data, err := os.ReadFile("/etc/os-release"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "ID=") {
+				return strings.Trim(strings.TrimPrefix(line, "ID="), "\"")
+			}
+		}
+	}
+	distroFiles := map[string]string{
+		"/etc/redhat-release": "rhel",
+		"/etc/debian_version": "debian",
+		"/etc/arch-release":   "arch",
+		"/etc/gentoo-release": "gentoo",
+		"/etc/alpine-release": "alpine",
+	}
+	for file, distro := range distroFiles {
+		if _, err := os.Stat(file); err == nil {
+			return distro
+		}
+	}
+	return "unknown"
+}
+
+func detectInitSystem() string {
+	if _, err := os.Stat("/run/systemd/system"); err == nil {
+		return "systemd"
+	}
+	if _, err := os.Stat("/sbin/openrc"); err == nil {
+		return "openrc"
+	}
+	if _, err := os.Stat("/etc/init"); err == nil {
+		return "upstart"
+	}
+	if _, err := os.Stat("/etc/init.d"); err == nil {
+		return "sysvinit"
+	}
+	return "unknown"
+}
+
+func generateAutostartScriptContent(autostartSessions []SessionEntry) (string, error) {
+	var script strings.Builder
+	script.WriteString("#!/bin/bash\n")
+	script.WriteString("sleep 15\n\n")
+
+	for _, session := range autostartSessions {
+		escapedCommand := strings.ReplaceAll(session.Command, `"`, `\"`)
+		if session.Command == "shell" || session.Command == "" {
+			script.WriteString(fmt.Sprintf("screen -dmS spv_%s\n", session.Name))
+		} else {
+			script.WriteString(fmt.Sprintf("screen -dmS spv_%s bash -c \"%s; exec bash\"\n", session.Name, escapedCommand))
+		}
+	}
+	script.WriteString("\nexit 0\n")
+	return script.String(), nil
+}
+
+func createLinuxAutostart(autostartSessions []SessionEntry, sysInfo SystemInfo) error {
+	scriptContent, err := generateAutostartScriptContent(autostartSessions)
+	if err != nil {
+		return err
+	}
+	scriptPath := "/usr/local/bin/spv-autostart.sh"
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		return fmt.Errorf("failed to create autostart script %s: %v", scriptPath, err)
+	}
+
+	switch sysInfo.InitSystem {
+	case "systemd":
+		serviceContent := `[Unit]
+Description=SPV Screen Session Autostart
+After=multi-user.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=forking
+User=root
+ExecStart=/usr/local/bin/spv-autostart.sh
+Restart=on-failure
+RestartSec=5
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+`
+		servicePath := "/etc/systemd/system/spv-autostart.service"
+		if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+			return fmt.Errorf("failed to create systemd service: %v", err)
+		}
+		if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+			return fmt.Errorf("failed to reload systemd: %v", err)
+		}
+		if err := exec.Command("systemctl", "enable", "spv-autostart.service").Run(); err != nil {
+			return fmt.Errorf("failed to enable service: %v", err)
+		}
+		return nil
+	case "sysvinit":
+		initContent := fmt.Sprintf(`#!/bin/bash
+# chkconfig: 2345 99 10
+# description: SPV Screen Session Autostart
+### BEGIN INIT INFO
+# Provides: spv-autostart
+# Required-Start: $remote_fs $syslog
+# Required-Stop: $remote_fs $syslog
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: SPV Screen Session Autostart
+# Description: Automatically starts screen sessions defined by SPV
+### END INIT INFO
+
+. /etc/init.d/functions
+
+prog="spv-autostart.sh"
+daemon="%s"
+lockfile=/var/lock/subsys/$prog
+
+start() {
+    echo -n $"Starting $prog: "
+    daemon --background $daemon
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && touch $lockfile
+    return $retval
+}
+
+stop() {
+    echo -n $"Stopping $prog: "
+    killproc $daemon
+    retval=$?
+    echo
+    [ $retval -eq 0 ] && rm -f $lockfile
+    return $retval
+}
+
+restart() {
+    stop
+    start
+}
+
+case "$1" in
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    status)
+        status $daemon
+        ;;
+    *)
+        echo "Usage: %%s {start|stop|restart|status}"
+        exit 1
+esac
+exit 0
+`, scriptPath)
+
+		initScriptPath := "/etc/init.d/spv-autostart"
+		if err := os.WriteFile(initScriptPath, []byte(initContent), 0755); err != nil {
+			return fmt.Errorf("failed to create SysVinit script: %v", err)
+		}
+		switch sysInfo.Distribution {
+		case "debian", "ubuntu":
+			if err := exec.Command("update-rc.d", "spv-autostart", "defaults").Run(); err != nil {
+				return fmt.Errorf("failed to enable service with update-rc.d: %v", err)
+			}
+		case "rhel", "centos", "fedora":
+			if err := exec.Command("chkconfig", "--add", "spv-autostart").Run(); err != nil {
+				return fmt.Errorf("failed to add service with chkconfig: %v", err)
+			}
+			if err := exec.Command("chkconfig", "spv-autostart", "on").Run(); err != nil {
+				return fmt.Errorf("failed to enable service with chkconfig: %v", err)
+			}
+		}
+		return nil
+	case "openrc":
+		rcScriptContent := fmt.Sprintf(`#!/sbin/openrc-run
+
+name="spv-autostart"
+description="SPV Screen Session Autostart"
+
+depend() {
+    need net
+    after bootmisc
+}
+
+start() {
+    ebegin "Starting SPV autostart sessions"
+    %s
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping SPV sessions"
+    screen -ls | grep -E "spv_" | cut -d. -f1 | awk '{print $2}' | xargs -r -I {} screen -S {} -X quit
+    eend $?
+}
+`, strings.ReplaceAll(scriptContent, "\n", "\n    "))
+
+		rcScriptPath := "/etc/init.d/spv-autostart"
+		if err := os.WriteFile(rcScriptPath, []byte(rcScriptContent), 0755); err != nil {
+			return fmt.Errorf("failed to create OpenRC script: %v", err)
+		}
+		if err := exec.Command("rc-update", "add", "spv-autostart", "default").Run(); err != nil {
+			return fmt.Errorf("failed to enable OpenRC service: %v", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported init system for autostart: %s", sysInfo.InitSystem)
+	}
+}
+
+func removeLinuxAutostart(sysInfo SystemInfo) error {
+	scriptPath := "/usr/local/bin/spv-autostart.sh"
+
+	switch sysInfo.InitSystem {
+	case "systemd":
+		servicePath := "/etc/systemd/system/spv-autostart.service"
+		exec.Command("systemctl", "stop", "spv-autostart.service").Run()
+		exec.Command("systemctl", "disable", "spv-autostart.service").Run()
+		os.Remove(servicePath)
+		os.Remove(scriptPath)
+		exec.Command("systemctl", "daemon-reload").Run()
+		return nil
+	case "sysvinit":
+		initScriptPath := "/etc/init.d/spv-autostart"
+		exec.Command("service", "spv-autostart", "stop").Run()
+		switch sysInfo.Distribution {
+		case "debian", "ubuntu":
+			exec.Command("update-rc.d", "-f", "spv-autostart", "remove").Run()
+		case "rhel", "centos", "fedora":
+			exec.Command("chkconfig", "--del", "spv-autostart").Run()
+		}
+		os.Remove(initScriptPath)
+		os.Remove(scriptPath)
+		return nil
+	case "openrc":
+		rcScriptPath := "/etc/init.d/spv-autostart"
+		exec.Command("rc-service", "spv-autostart", "stop").Run()
+		exec.Command("rc-update", "del", "spv-autostart", "default").Run()
+		os.Remove(rcScriptPath)
+		os.Remove(scriptPath)
+		return nil
+	default:
+		return fmt.Errorf("unsupported init system for autostart removal: %s", sysInfo.InitSystem)
+	}
+}
+
+func updateAutostartScript(sessions []screenSession) error {
+	sysInfo := detectSystem()
+
+	if sysInfo.OS == "darwin" || sysInfo.OS == "windows" {
+		return fmt.Errorf("autostart is not supported on your OS")
+	}
+
+	autostartSessions := []SessionEntry{}
+	for _, session := range sessions {
+		if session.autostart {
+			autostartSessions = append(autostartSessions, SessionEntry{
+				Name:        session.name,
+				Command:     session.command,
+				Description: session.description,
+			})
+		}
+	}
+
+	if len(autostartSessions) == 0 {
+		return removeLinuxAutostart(sysInfo)
+	} else {
+		return createLinuxAutostart(autostartSessions, sysInfo)
+	}
+}
+
+func toggleSessionAutostart(sessionName string) error {
+	autostartEntries, err := readConfig(autostartFile)
+	if err != nil {
+		return err
+	}
+
+	sessionEntries, err := readConfig(sessionFile)
+	if err != nil {
+		return err
+	}
+
+	var sessionEntry *SessionEntry
+	for _, entry := range sessionEntries {
+		if entry.Name == sessionName {
+			sessionEntry = &entry
+			break
+		}
+	}
+
+	if sessionEntry == nil {
+		return fmt.Errorf("session not found")
+	}
+
+	var updatedEntries []SessionEntry
+	found := false
+	for _, entry := range autostartEntries {
+		if entry.Name != sessionName {
+			updatedEntries = append(updatedEntries, entry)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		updatedEntries = append(updatedEntries, *sessionEntry)
+	}
+
+	if err := writeConfig(autostartFile, updatedEntries); err != nil {
+		return fmt.Errorf("failed to update autostart configuration file: %v", err)
+	}
+
+	updatedManagedSessions := getScreens()
+	return updateAutostartScript(updatedManagedSessions)
+}
+
 func getScreens() []screenSession {
 	cmd := exec.Command("screen", "-ls")
-	output, _ := cmd.Output()
+	outputBytes, err := cmd.CombinedOutput()
 
 	sessionEntries, _ := readConfig(sessionFile)
 	sessionMap := make(map[string]SessionEntry)
@@ -299,48 +721,55 @@ func getScreens() []screenSession {
 		autostartMap[entry.Name] = true
 	}
 
-	lines := strings.Split(string(output), "\n")
 	var sessions []screenSession
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, ".") &&
-			(strings.Contains(line, "Attached") ||
-				strings.Contains(line, "Detached")) {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				fullName := parts[0]
-				nameParts := strings.Split(fullName, ".")
+	if err == nil || strings.Contains(strings.ToLower(string(outputBytes)), "socket") {
+		lines := strings.Split(string(outputBytes), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.Contains(line, ".") &&
+				(strings.Contains(line, "Attached") ||
+					strings.Contains(line, "Detached")) {
+				parts := strings.Fields(line)
+				if len(parts) >= 2 {
+					fullName := parts[0]
+					nameParts := strings.Split(fullName, ".")
 
-				id := ""
-				name := fullName
-				if len(nameParts) >= 2 {
-					id = nameParts[0]
-					name = strings.Join(nameParts[1:], ".")
+					id := ""
+					name := fullName
+					if len(nameParts) >= 2 {
+						id = nameParts[0]
+						name = strings.Join(nameParts[1:], ".")
+					}
+
+					if !strings.HasPrefix(name, "spv_") {
+						continue
+					}
+					displayName := strings.TrimPrefix(name, "spv_")
+
+					status := "unknown"
+					if strings.Contains(line, "Attached") {
+						status = "attached"
+					} else if strings.Contains(line, "Detached") {
+						status = "detached"
+					}
+
+					session := screenSession{
+						id:          id,
+						name:        displayName,
+						status:      status,
+						command:     "shell",
+						description: "A standard interactive shell session.",
+						autostart:   autostartMap[displayName],
+					}
+
+					if entry, ok := sessionMap[displayName]; ok {
+						session.command = entry.Command
+						session.description = entry.Description
+					}
+
+					sessions = append(sessions, session)
 				}
-
-				status := "unknown"
-				if strings.Contains(line, "Attached") {
-					status = "attached"
-				} else if strings.Contains(line, "Detached") {
-					status = "detached"
-				}
-
-				session := screenSession{
-					id:          id,
-					name:        name,
-					status:      status,
-					command:     "shell",
-					description: "A standard interactive shell session.",
-					autostart:   autostartMap[name],
-				}
-
-				if entry, ok := sessionMap[name]; ok {
-					session.command = entry.Command
-					session.description = entry.Description
-				}
-
-				sessions = append(sessions, session)
 			}
 		}
 	}
@@ -358,6 +787,23 @@ func getSystemStats() (float64, float64) {
 	}
 
 	return cpuUsage, memStat.UsedPercent
+}
+
+func createScreenSession(name, command, description string) error {
+	fullSessionName := fmt.Sprintf("spv_%s", name)
+
+	var cmd *exec.Cmd
+	if command == "shell" || command == "" {
+		cmd = exec.Command("screen", "-dmS", fullSessionName)
+	} else {
+		cmd = exec.Command("screen", "-dmS", fullSessionName, "bash", "-c", command+"; exec bash")
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to create screen session: %v", err)
+	}
+
+	return addSessionEntry(name, command, description)
 }
 
 func fetchLatestCommit() tea.Msg {
@@ -403,6 +849,8 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case tickMsg:
 		if m.state == listView {
@@ -410,6 +858,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessions = getScreens()
 			if m.selected >= len(m.sessions) && len(m.sessions) > 0 {
 				m.selected = len(m.sessions) - 1
+			} else if len(m.sessions) == 0 {
+				m.selected = 0
 			}
 		}
 		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg {
@@ -450,13 +900,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "k":
 				if len(m.sessions) > 0 && m.selected < len(m.sessions) {
 					session := m.sessions[m.selected]
-					screenName := fmt.Sprintf("%s.%s", session.id, session.name)
-					exec.Command("screen", "-S", screenName, "-X", "quit").Run()
+					fullScreenName := fmt.Sprintf("spv_%s", session.name)
+
+					exec.Command("screen", "-S", fullScreenName, "-X", "quit").Run()
+
 					removeEntry(sessionFile, session.name)
 					removeEntry(autostartFile, session.name)
+
 					m.sessions = getScreens()
 					if m.selected >= len(m.sessions) && len(m.sessions) > 0 {
 						m.selected = len(m.sessions) - 1
+					} else if len(m.sessions) == 0 {
+						m.selected = 0
+					}
+
+					if err := updateAutostartScript(m.sessions); err != nil {
+						m.errorMsg = "Issues creating autostart script"
 					}
 				}
 
@@ -467,11 +926,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if len(m.sessions) > 0 && m.selected < len(m.sessions) {
 					session := m.sessions[m.selected]
-					screenName := fmt.Sprintf("%s.%s", session.id, session.name)
+					fullScreenName := fmt.Sprintf("%s.spv_%s", session.id, session.name)
 					return m, tea.ExecProcess(
-						exec.Command("screen", "-r", screenName),
+						exec.Command("screen", "-r", fullScreenName),
 						nil,
 					)
+				}
+
+			case "t":
+				if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+					m.errorMsg = "Autostart is not supported on macOS/Windows"
+					go func() {
+						time.Sleep(3 * time.Second)
+						m.errorMsg = ""
+					}()
+					return m, nil
+				}
+
+				if len(m.sessions) > 0 && m.selected < len(m.sessions) {
+					session := m.sessions[m.selected]
+					if err := toggleSessionAutostart(session.name); err != nil {
+						m.errorMsg = "Issues creating autostart script"
+					}
+					m.sessions = getScreens()
 				}
 
 			case "?":
@@ -509,12 +986,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tempCommand = m.textInput.Value()
 				m.textInput.SetValue("")
 				if m.tempCommand == "" {
-					exec.Command("screen", "-dmS", m.tempName).Start()
-					addSessionEntry(
-						m.tempName,
-						"shell",
-						"A standard interactive shell session.",
-					)
+					m.tempCommand = "shell"
+					m.tempDescription = "A standard interactive shell session."
+					if err := createScreenSession(m.tempName, m.tempCommand, m.tempDescription); err != nil {
+						m.errorMsg = "Issues creating autostart script"
+					}
 					m.state = listView
 					m.textInput.Blur()
 					m.sessions = getScreens()
@@ -537,32 +1013,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.tempDescription == "" {
 					m.tempDescription = "A screen session running a custom command."
 				}
-				m.textInput.SetValue("")
-				m.state = addingAutostart
-				m.textInput.Placeholder = "Autostart on reboot? (y/n)"
-				return m, textinput.Blink
 
-			case "esc":
-				m.state = listView
-				m.textInput.Blur()
-				m.textInput.SetValue("")
-			}
-
-		case addingAutostart:
-			switch msg.String() {
-			case "enter":
-				autostart := strings.ToLower(m.textInput.Value()) == "y"
-				exec.Command(
-					"screen",
-					"-dmS",
-					m.tempName,
-					"bash",
-					"-c",
-					m.tempCommand,
-				).Start()
-				addSessionEntry(m.tempName, m.tempCommand, m.tempDescription)
-				if autostart {
-					addAutostartEntry(m.tempName, m.tempCommand)
+				if err := createScreenSession(m.tempName, m.tempCommand, m.tempDescription); err != nil {
+					m.errorMsg = "Issues creating autostart script"
 				}
 
 				m.state = listView
@@ -578,9 +1031,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var cmd tea.Cmd
 	switch m.state {
-	case addingName, addingCommand, addingDescription, addingAutostart:
+	case addingName, addingCommand, addingDescription:
 		m.textInput, cmd = m.textInput.Update(msg)
 	}
 
@@ -614,14 +1066,12 @@ func (m model) View() string {
 		)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, about)
 
-	case addingName, addingCommand, addingDescription, addingAutostart:
+	case addingName, addingCommand, addingDescription:
 		prompt := "Session Name"
 		if m.state == addingCommand {
 			prompt = "Command"
 		} else if m.state == addingDescription {
 			prompt = "Description (optional)"
-		} else if m.state == addingAutostart {
-			prompt = "Autostart on reboot? (y/n)"
 		}
 
 		content := lipgloss.JoinVertical(
@@ -694,10 +1144,14 @@ func (m model) View() string {
 	} else {
 		for i := start; i < end; i++ {
 			session := m.sessions[i]
+			sessionDisplay := session.name
+			if session.autostart {
+				sessionDisplay += " ●"
+			}
 			if i == m.selected {
-				sidebar.WriteString(selectedStyle.Render(session.name) + "\n")
+				sidebar.WriteString(selectedStyle.Render(sessionDisplay) + "\n")
 			} else {
-				sidebar.WriteString(session.name + "\n")
+				sidebar.WriteString(sessionDisplay + "\n")
 			}
 		}
 	}
@@ -738,13 +1192,21 @@ func (m model) View() string {
 		content.WriteString(mutedTextStyle.Render("No session selected") + "\n\n" + normalTextStyle.Render("Press 'a' to create a new session"))
 	}
 
+	if m.errorMsg != "" {
+		content.WriteString("\n\n" + errorTextStyle.Render(m.errorMsg))
+		go func() {
+			time.Sleep(3 * time.Second)
+			m.errorMsg = ""
+		}()
+	}
+
 	main := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		dynamicSidebarStyle.Render(sidebar.String()),
 		dynamicContentStyle.Render(content.String()),
 	)
 
-	footer := footerStyle.Width(80).Render("↑↓ navigate • enter attach • a add • k kill • r refresh • ? about • q quit")
+	footer := footerStyle.Width(80).Render("↑↓ navigate • enter attach • a add • k kill • r refresh • t toggle autostart • ? about • q quit")
 
 	layout := lipgloss.JoinVertical(
 		lipgloss.Center,
@@ -763,7 +1225,7 @@ func main() {
 		themeName := os.Args[2]
 		if _, ok := themes[themeName]; !ok {
 			fmt.Printf("Error: Theme '%s' not found.\n", themeName)
-			fmt.Println("Available themes: slate, pink, forest")
+			fmt.Println("Available themes: slate, pink, forest, mellow, arctic, solarized, dracula, gruvbox, nord")
 			os.Exit(1)
 		}
 		if err := saveTheme(themeName); err != nil {

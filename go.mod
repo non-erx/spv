@@ -1,4 +1,4 @@
-module github.com/non-erx/spv
+module spv
 
 go 1.24.5
 

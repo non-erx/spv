@@ -18,7 +18,7 @@ You can install `spv` in one of three ways:
 
 If you have Go installed, this is the easiest method:
 ```bash
-go install github.com/non-erx/spv@v0.0.2
+go install github.com/non-erx/spv@latest
 ```
 
 **2. From Source**

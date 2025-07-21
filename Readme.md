@@ -77,7 +77,7 @@ All keybindings are conveniently displayed in the footer of the application:
 -   `📜` **Detailed View:** See a session's ID, status (Attached/Detached), autostart configuration, the command it's running, and a custom description.
 -   `⌨️` **Intuitive Workflow:** A multi-step wizard guides you through creating new sessions (Name → Command → Description). Autostart status is now toggled directly on existing sessions with the 't' key.
 <div  align="center">
-
+ 
 <div  align="center">
 <sub >Check out my silly web-page -> <a href="https://non-erx.dev">non-erx.dev </a></sub>
 </div>

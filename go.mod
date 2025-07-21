@@ -1,7 +1,7 @@
-module spv
+module github.com/non-erx/spv
 
 go 1.24.5
-
+retract [v0.0.2]
 require (
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.6

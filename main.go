@@ -19,7 +19,9 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
-const version = "v0.0.2"
+var Version = "v0.0.2"
+var Commit = ""
+
 const githubOwner = "non-erx"
 const githubRepo = "spv"
 
@@ -938,7 +940,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.errorMsg = "Autostart is not supported on macOS/Windows"
 					go func() {
 						time.Sleep(3 * time.Second)
-						m.errorMsg = ""
 					}()
 					return m, nil
 				}
@@ -1046,8 +1047,13 @@ func (m model) View() string {
 
 	switch m.state {
 	case showingAbout:
+		versionDisplay := Version
+		if Commit != "" {
+			versionDisplay = fmt.Sprintf("%s (%s)", Version, Commit)
+		}
+
 		about := aboutStyle.Render(
-			accentStyle.Render("SPV "+version+" - Screen Process Viewer") + "\n" +
+			accentStyle.Render("SPV "+versionDisplay+" - Screen Process Viewer") + "\n" +
 				"Minimal TUI for Linux screen management\n\n" +
 				accentStyle.Render("Author:") + "\n" +
 				"Git: " +
@@ -1062,6 +1068,15 @@ func (m model) View() string {
 				"SoundCloud: " +
 				lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5500")).Render("@mean2ya") +
 				"\n\n" +
+				(func() string {
+					if m.commitMsg != "" && Commit != m.commitMsg && Commit != "" {
+						return "\n" + mutedTextStyle.Render("Latest commit on GitHub: ") + accentStyle.Render(m.commitMsg) + "\n"
+					}
+					if m.commitMsg != "" && Commit == "" {
+						return "\n" + mutedTextStyle.Render("Latest commit fetched: ") + accentStyle.Render(m.commitMsg) + "\n"
+					}
+					return ""
+				}()) +
 				lipgloss.NewStyle().Foreground(lipgloss.Color("#64748B")).Render("Press any key to continue..."),
 		)
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, about)
@@ -1087,9 +1102,13 @@ func (m model) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
 
-	versionStr := version
-	if m.commitMsg != "" {
-		versionStr = fmt.Sprintf("%s – %s", version, m.commitMsg)
+	versionStr := Version
+	if Commit != "" {
+		versionStr = fmt.Sprintf("%s (%s)", Version, Commit)
+	} else {
+		if m.commitMsg != "" {
+			versionStr = fmt.Sprintf("%s (%s)", Version, m.commitMsg)
+		}
 	}
 
 	header := headerStyle.Width(80).Render(
@@ -1196,7 +1215,6 @@ func (m model) View() string {
 		content.WriteString("\n\n" + errorTextStyle.Render(m.errorMsg))
 		go func() {
 			time.Sleep(3 * time.Second)
-			m.errorMsg = ""
 		}()
 	}
 

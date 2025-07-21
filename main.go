@@ -19,7 +19,7 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
-var Version = "v0.0.2"
+var Version = "v0.0.3"
 var Commit = ""
 
 const githubOwner = "non-erx"

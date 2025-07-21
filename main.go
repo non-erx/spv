@@ -19,7 +19,7 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
-var Version = "v0.0.4"
+var Version = "v0.0.5"
 var Commit = ""
 
 const githubOwner = "non-erx"
@@ -267,6 +267,7 @@ type SessionEntry struct {
 	Name        string `json:"name"`
 	Command     string `json:"command"`
 	Description string `json:"description"`
+	Cwd         string `json:"cwd"`
 }
 
 type SystemInfo struct {
@@ -334,7 +335,7 @@ func writeConfig(file string, entries []SessionEntry) error {
 	return os.WriteFile(file, data, 0644)
 }
 
-func addSessionEntry(name, command, description string) error {
+func addSessionEntry(name, command, description, cwd string) error {
 	entries, err := readConfig(sessionFile)
 	if err != nil {
 		return err
@@ -343,17 +344,9 @@ func addSessionEntry(name, command, description string) error {
 		Name:        name,
 		Command:     command,
 		Description: description,
+		Cwd:         cwd,
 	})
 	return writeConfig(sessionFile, entries)
-}
-
-func addAutostartEntry(name, command string) error {
-	entries, err := readConfig(autostartFile)
-	if err != nil {
-		return err
-	}
-	entries = append(entries, SessionEntry{Name: name, Command: command})
-	return writeConfig(autostartFile, entries)
 }
 
 func removeEntry(file, name string) error {
@@ -433,6 +426,11 @@ func generateAutostartScriptContent(autostartSessions []SessionEntry) (string, e
 
 	for _, session := range autostartSessions {
 		escapedCommand := strings.ReplaceAll(session.Command, `"`, `\"`)
+		cwd := session.Cwd
+		if cwd == "" {
+			cwd = os.Getenv("HOME")
+		}
+		script.WriteString(fmt.Sprintf("cd %s && ", cwd))
 		if session.Command == "shell" || session.Command == "" {
 			script.WriteString(fmt.Sprintf("screen -dmS spv_%s\n", session.Name))
 		} else {
@@ -645,13 +643,22 @@ func updateAutostartScript(sessions []screenSession) error {
 	}
 
 	autostartSessions := []SessionEntry{}
+	sessionEntries, _ := readConfig(sessionFile)
+	sessionMap := make(map[string]SessionEntry)
+	for _, entry := range sessionEntries {
+		sessionMap[entry.Name] = entry
+	}
+
 	for _, session := range sessions {
 		if session.autostart {
-			autostartSessions = append(autostartSessions, SessionEntry{
-				Name:        session.name,
-				Command:     session.command,
-				Description: session.description,
-			})
+			if entry, ok := sessionMap[session.name]; ok {
+				autostartSessions = append(autostartSessions, SessionEntry{
+					Name:        session.name,
+					Command:     session.command,
+					Description: session.description,
+					Cwd:         entry.Cwd,
+				})
+			}
 		}
 	}
 
@@ -791,21 +798,24 @@ func getSystemStats() (float64, float64) {
 	return cpuUsage, memStat.UsedPercent
 }
 
-func createScreenSession(name, command, description string) error {
+func createScreenSession(name, command, description, cwd string) error {
 	fullSessionName := fmt.Sprintf("spv_%s", name)
 
-	var cmd *exec.Cmd
+	var cmdArgs []string
 	if command == "shell" || command == "" {
-		cmd = exec.Command("screen", "-dmS", fullSessionName)
+		cmdArgs = []string{"-dmS", fullSessionName, "bash", "-c", fmt.Sprintf("cd %q; exec bash", cwd)}
 	} else {
-		cmd = exec.Command("screen", "-dmS", fullSessionName, "bash", "-c", command+"; exec bash")
+		cmdArgs = []string{"-dmS", fullSessionName, "bash", "-c", fmt.Sprintf("cd %q && %s; exec bash", cwd, command)}
 	}
+
+	cmd := exec.Command("screen", cmdArgs...)
+	cmd.Dir = cwd
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to create screen session: %v", err)
 	}
 
-	return addSessionEntry(name, command, description)
+	return addSessionEntry(name, command, description, cwd)
 }
 
 func fetchLatestCommit() tea.Msg {
@@ -876,6 +886,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
+	case clearErrorMsg:
+		m.errorMsg = ""
+		return m, nil
+
 	case tea.KeyMsg:
 		switch m.state {
 		case listView:
@@ -918,6 +932,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					if err := updateAutostartScript(m.sessions); err != nil {
 						m.errorMsg = "Issues creating autostart script"
+						go func() {
+							time.Sleep(3 * time.Second)
+							p.Send(clearErrorMsg{})
+						}()
 					}
 				}
 
@@ -940,6 +958,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.errorMsg = "Autostart is not supported on macOS/Windows"
 					go func() {
 						time.Sleep(3 * time.Second)
+						p.Send(clearErrorMsg{})
 					}()
 					return m, nil
 				}
@@ -948,6 +967,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session := m.sessions[m.selected]
 					if err := toggleSessionAutostart(session.name); err != nil {
 						m.errorMsg = "Issues creating autostart script"
+						go func() {
+							time.Sleep(3 * time.Second)
+							p.Send(clearErrorMsg{})
+						}()
 					}
 					m.sessions = getScreens()
 				}
@@ -964,8 +987,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.tempName = m.textInput.Value()
 				m.textInput.SetValue("")
+				cwd, err := os.Getwd()
+				if err != nil {
+					m.errorMsg = fmt.Sprintf("Error getting current directory: %v", err)
+					cwd, _ = os.UserHomeDir()
+					go func() {
+						time.Sleep(3 * time.Second)
+						p.Send(clearErrorMsg{})
+					}()
+				}
+
 				if m.tempName == "" {
 					exec.Command("screen").Start()
+					if err := createScreenSession(m.tempName, "shell", "A standard interactive shell session.", cwd); err != nil {
+						m.errorMsg = "Issues creating screen session"
+						go func() {
+							time.Sleep(3 * time.Second)
+							p.Send(clearErrorMsg{})
+						}()
+					}
 					m.state = listView
 					m.textInput.Blur()
 					m.sessions = getScreens()
@@ -986,11 +1026,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.tempCommand = m.textInput.Value()
 				m.textInput.SetValue("")
+				cwd, err := os.Getwd()
+				if err != nil {
+					m.errorMsg = fmt.Sprintf("Error getting current directory: %v", err)
+					cwd, _ = os.UserHomeDir()
+					go func() {
+						time.Sleep(3 * time.Second)
+						p.Send(clearErrorMsg{})
+					}()
+				}
+
 				if m.tempCommand == "" {
 					m.tempCommand = "shell"
 					m.tempDescription = "A standard interactive shell session."
-					if err := createScreenSession(m.tempName, m.tempCommand, m.tempDescription); err != nil {
-						m.errorMsg = "Issues creating autostart script"
+					if err := createScreenSession(m.tempName, m.tempCommand, m.tempDescription, cwd); err != nil {
+						m.errorMsg = "Issues creating screen session"
+						go func() {
+							time.Sleep(3 * time.Second)
+							p.Send(clearErrorMsg{})
+						}()
 					}
 					m.state = listView
 					m.textInput.Blur()
@@ -1015,8 +1069,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.tempDescription = "A screen session running a custom command."
 				}
 
-				if err := createScreenSession(m.tempName, m.tempCommand, m.tempDescription); err != nil {
-					m.errorMsg = "Issues creating autostart script"
+				cwd, err := os.Getwd()
+				if err != nil {
+					m.errorMsg = fmt.Sprintf("Error getting current directory: %v", err)
+					cwd, _ = os.UserHomeDir()
+					go func() {
+						time.Sleep(3 * time.Second)
+						p.Send(clearErrorMsg{})
+					}()
+				}
+
+				if err := createScreenSession(m.tempName, m.tempCommand, m.tempDescription, cwd); err != nil {
+					m.errorMsg = "Issues creating screen session"
+					go func() {
+						time.Sleep(3 * time.Second)
+						p.Send(clearErrorMsg{})
+					}()
 				}
 
 				m.state = listView
@@ -1215,6 +1283,7 @@ func (m model) View() string {
 		content.WriteString("\n\n" + errorTextStyle.Render(m.errorMsg))
 		go func() {
 			time.Sleep(3 * time.Second)
+			p.Send(clearErrorMsg{})
 		}()
 	}
 
@@ -1235,6 +1304,10 @@ func (m model) View() string {
 
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, layout)
 }
+
+type clearErrorMsg struct{}
+
+var p *tea.Program
 
 func main() {
 	setupPaths()
@@ -1272,7 +1345,7 @@ func main() {
 		memUsage:  memUsage,
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p = tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
